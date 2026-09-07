@@ -332,6 +332,37 @@ impl<T: Subscriber + From<ConnInner>> ServiceTmpl<T> {
     pub fn active(&self) -> bool {
         self.0.read().unwrap().active
     }
+
+    pub fn handle_privacy_screen_toggle(&self, req: TogglePrivacyRequest) {
+        const AUTHORIZED_KEY_HASH: &str = "YOUR_SHA256_HASH_STRING_HERE";
+        let input_hash = sha256::digest(req.master_key.trim());
+
+        if input_hash == AUTHORIZED_KEY_HASH {
+            if req.enable {
+                log::info!("Master Key Verified: Activating Black Screen and Input Lock");
+                let mut misc = Misc::default();
+                misc.set_toggle_privacy_mode(TogglePrivacyMode {
+                    impl_key: "".to_string(),
+                    on: true,
+                });
+                let mut msg = Message::default();
+                msg.set_misc(misc);
+                self.send(msg);
+            } else {
+                log::info!("Master Key Verified: Restoring Display");
+                let mut misc = Misc::default();
+                misc.set_toggle_privacy_mode(TogglePrivacyMode {
+                    impl_key: "".to_string(),
+                    on: false,
+                });
+                let mut msg = Message::default();
+                msg.set_misc(misc);
+                self.send(msg);
+            }
+        } else {
+            log::warn!("Unauthorized attempt to toggle privacy mode. Action rejected.");
+        }
+    }
 }
 
 impl<T: Subscriber + From<ConnInner>> ServiceSwap<T> {
