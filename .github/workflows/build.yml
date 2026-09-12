@@ -1,4 +1,4 @@
-name: Build RustDesk Windows EXE
+name: Auto Clone and Build RustDesk EXE
 
 on:
   push:
@@ -14,32 +14,42 @@ jobs:
       LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
 
     steps:
-      - name: Checkout Code
+      # ১. সরাসরি অফিশিয়াল RustDesk রিপোজিটরি ক্লোন করা হবে (আপনার নেট খরচ হবে না)
+      - name: Clone Official RustDesk Source Code
+        run: |
+          git clone --recurse-submodules https://github.com/rustdesk/rustdesk.git .
+
+      # ২. আপনার নিজের রিপোজিটরির কোনো কাস্টম ফাইল/প্যাচ থাকলে তা আনার জন্য
+      - name: Checkout Your Repository Custom Code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          path: 'custom_patch'
 
-      - name: Normalize Directory Structure
+      # ৩. যদি আপনার কাস্টম কোনো ফাইল থাকে, তা স্বয়ংক্রিয়ভাবে রিপ্লেস করা
+      - name: Apply Custom Files (If any)
         shell: pwsh
         run: |
-          if (Test-Path "rustdesk-master") {
-              Write-Host "Moving files from rustdesk-master to root directory..."
-              Get-ChildItem -Path "rustdesk-master" | ForEach-Object {
-                  Move-Item -Path $_.FullName -Destination "." -Force
+          if (Test-Path "custom_patch") {
+              Write-Host "Applying custom files from your repository..."
+              Get-ChildItem -Path "custom_patch" -Exclude ".git", ".github", "custom_patch" | ForEach-Object {
+                  Copy-Item -Path $_.FullName -Destination "." -Recurse -Force
               }
-              Remove-Item -Path "rustdesk-master" -Recurse -Force
+              Remove-Item -Path "custom_patch" -Recurse -Force
           }
 
+      # ৪. Rust এনভায়রনমেন্ট সেটআপ
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
+      # ৫. Python সেটআপ
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
+      # ৬. Flutter SDK সেটআপ
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -47,10 +57,12 @@ jobs:
           channel: 'stable'
           cache: true
 
+      # ৭. LLVM, Clang ও Ninja টুলস
       - name: Setup LLVM & Ninja
         run: |
           choco install llvm ninja -y
 
+      # ৮. প্রয়োজনীয় vcpkg অডিও/ভিডিও ডিপেন্ডেন্সি
       - name: Install vcpkg Dependencies
         shell: pwsh
         run: |
@@ -63,15 +75,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r libs/portable/requirements.txt || true
 
+      # ৯. RustDesk এবং Flutter বিল্ড রান করা
       - name: Build Rust Core & Flutter Windows
         shell: pwsh
         run: |
-          # 1. Fetch Flutter packages
           cd flutter
           flutter pub get
           cd ..
 
-          # 2. Build via RustDesk build script
           if (Test-Path "build.py") {
               python build.py --flutter
           } else {
@@ -80,6 +91,7 @@ jobs:
               flutter build windows --release
           }
 
+      # ১০. আউটপুট EXE সংগ্রহ করা
       - name: Collect Build Output
         shell: pwsh
         run: |
@@ -95,6 +107,7 @@ jobs:
               Copy-Item -Path "target/release/*.exe" -Destination "dist" -Force
           }
 
+      # ১১. ডাউনলোড করার জন্য আপলোড করা
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
