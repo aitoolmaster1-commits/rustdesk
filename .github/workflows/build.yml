@@ -9,6 +9,10 @@ jobs:
   build:
     runs-on: windows-2022
 
+    env:
+      VCPKG_ROOT: 'C:\vcpkg'
+      LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -18,7 +22,6 @@ jobs:
       - name: Normalize Directory Structure
         shell: pwsh
         run: |
-          # If files are inside 'rustdesk-master', move everything to the root
           if (Test-Path "rustdesk-master") {
               Write-Host "Moving files from rustdesk-master to root directory..."
               Get-ChildItem -Path "rustdesk-master" | ForEach-Object {
@@ -44,10 +47,16 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Setup LLVM / Clang
+      - name: Setup LLVM & Ninja
         run: |
           choco install llvm ninja -y
-          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: Install vcpkg Dependencies
+        shell: pwsh
+        run: |
+          cd C:\vcpkg
+          .\vcpkg.exe integrate install
+          .\vcpkg.exe install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static
 
       - name: Install Python Build Dependencies
         run: |
@@ -66,8 +75,7 @@ jobs:
           if (Test-Path "build.py") {
               python build.py --flutter
           } else {
-              # Fallback direct build
-              cargo build --release
+              cargo build --release --features flutter
               cd flutter
               flutter build windows --release
           }
@@ -77,14 +85,12 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path "dist" -Force
           
-          # Copy Flutter built release files
           if (Test-Path "flutter/build/windows/x64/runner/Release") {
               Copy-Item -Path "flutter/build/windows/x64/runner/Release/*" -Destination "dist" -Recurse -Force
           } elseif (Test-Path "flutter/build/windows/runner/Release") {
               Copy-Item -Path "flutter/build/windows/runner/Release/*" -Destination "dist" -Recurse -Force
           }
           
-          # Copy target release binaries if generated
           if (Test-Path "target/release/*.exe") {
               Copy-Item -Path "target/release/*.exe" -Destination "dist" -Force
           }
